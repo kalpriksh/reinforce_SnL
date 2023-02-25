@@ -36,6 +36,16 @@ class SnlBoard:
         self.total_positions = 100
         self.ties = 0
         
+        self.token_home_reward = 20
+        self.invalid_move_reward = -50
+        self.game_won_reward = 100
+        self.game_lost_reward = 100
+        self.game_tie_reward = 50
+        
+        self.p1_wins = 0
+        self.p2_wins = 0
+        
+        
         self.p1 = Player()
         self.p2 = Player()
         
@@ -73,8 +83,13 @@ class SnlBoard:
             
         pass
     
-    def is_invalid_move(self):
-        pass
+    def is_invalid_move(self, current_position, new_position, active_player:Player):
+        
+        # check if new position is out of bounds
+        if new_position > 100:
+            return True
+        
+        return False
     
     def get_board_state(self):
         """
@@ -93,18 +108,9 @@ class SnlBoard:
         # player plays turn
         token_to_move = action
         
-        
-        # implement strategies if applicable
-        
-        # if active_player.AGENT_TYPE == 'RL' and self.isTrain:
-        #     token_to_move_strat = self.check_stratergies(self.board, active_player)        
-        #     if token_to_move_strat:
-        #         token_to_move = token_to_move_strat
-        
-        
         # board update state
-        while not self.board_update_after_turn(active_player.symbol+'_'+str(token_to_move), active_player):
-            token_to_move = active_player.play_turn(self.getStateHash(),(self.die_val - 1))
+        self.board_update_after_turn(active_player, token_to_move)
+        
         
         if active_player.AGENT_TYPE == 'RL':
             # get reward for action
@@ -115,7 +121,7 @@ class SnlBoard:
         
         active_player.moves -= 1
       
-    def board_update_after_turn(self, token_symbol, active_player : Player):
+    def board_update_after_turn(self, active_player : Player, token_to_move):
         """ 
         1. get the new position for the current token
         2. check if snakes or ladder
@@ -129,17 +135,37 @@ class SnlBoard:
         """
                 
         # 1. get current position of the token from board
+        
+        current_token_position = active_player.post_token_array[token_to_move]
         new_position = -1
         
-        # token found ? | token position | token location
-        token_state = self.token_on_board(token_symbol)
-        
-        if token_state[0]:
-            new_position = token_state[1] + self.die_val
-            # remove token from the old position
-            self.board[token_state[1]].remove(token_symbol)
-        else:
-            new_position += self.die_val
+        # get new possible position
+        new_token_position = current_token_position + (self.die_val + 1)
+
+        # check if valid position
+        if(self.is_invalid_move(current_token_position, new_token_position, active_player)):
+            active_player.moves += -1
+            
+            # check if game is over
+            is_game_end = self.game_finished()
+            
+            # calculate reward
+            if(is_game_end):
+                p1_won = False
+                is_tie = False
+                
+                if self.p1.get_score() > self.p2.get_score():
+                    p1_won = True
+                elif self.p1.get_score() == self.p2.get_score():
+                    is_tie = True
+                
+                if p1_won:
+                    reward = self.game_won_reward + self.invalid_move_reward
+                elif is_tie:
+                    reward = self.invalid_move_reward + self.game_tie_reward
+                    
+            # observation | reward | done |info -- GYM format
+            return (self.get_board_state(),reward,self.game_finished(),{})
         
         # is token position valid?
         if new_position > self.total_positions - 1:
