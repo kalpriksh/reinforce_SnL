@@ -23,15 +23,16 @@ class Player:
 
 #endregion
 
-
 class SnlBoard:
     
-    def __init__(self):
+    def __init__(self,printing=False):
+        
+        self.print_info = printing
         
         # 100 positions available
         # player 2 is a random bot
         
-        self.board = np.zeros(shape=(100,8))
+        self.board = np.zeros(shape=(8,100))
         
         self.die_val = -1
         self.total_positions = 100
@@ -46,26 +47,35 @@ class SnlBoard:
         self.p1_wins = 0
         self.p2_wins = 0
         
-        
-        self.p1 = Player()
-        self.p2 = Player()
-        
         self.opp = {1:2,2:1}
         
         self.info = dict()
-    
-    # reset for gym environment
-    def reset(self,state):
         
+    def reset(self,state):
+        """resets the board to its initial state
+
+        Args:
+            state (_type_): sample from the observation_state [gym space defined for the gym environment] 
+        """        
         # get initial die value
         self.die_val = state[0]  # values [0 - 5]
         
-        # get initial state would always be array(800,) of zeros
-        self.board = state[1:].reshape(100,8)
+        # get initial state would always be array(2,4) of zeros
+        self.board = state[1:].reshape(2,4)
         
         # board info saved
         self.info['starting_state'] = self.board
         
+        self.p1 = Player(1)
+        self.p2 = Player(2)
+        
+        if(self.print_info):
+            print('################################')
+            print('environment state:')
+            print('die value :{}\nboard state :\n{}'.format(self.die_val + 1, self.board))
+            print('player 1 init: ', self.p1)
+            print('player 2 init: ', self.p2)
+            print('################################')
         
      # step for gym environment 
     
@@ -76,57 +86,71 @@ class SnlBoard:
         """        
         
         # reset die value to -1 after p2 turn
-        if self.die_val != -1:
+        if self.die_val == -1:
             self.die_val = np.random.randint(0, 6)
+            
+        ######## player 1 plays
+        reward = 0
+        observation = self.get_board_state()
+        is_game_end = False
         
-        while not self.game_finished():
-            
-            ######## player 1 plays
-            reward = 0
-            observation = self.get_board_state()
-            is_game_end = False
-            
-            # action type [VALID | INVALID]
-            action_type = self.player_plays(self.p1, action)
-            self.p1.moves += -1
-            
-            # in case the action is invalid
-            if action_type == 'INVALID':                
-                # get reward
-                reward = self.invalid_move_reward
-
-
-            ######## player 2 plays
-
-            # roll die
-            self.die_val = np.random.randint(0,6) # [ 0-5 ]
-            
-            # action type does not matter for p2
-            action_type = self.player_plays(self.p2, np.random.randint(0,4))
-            self.p2.moves += -1
-            
-            
-            ####### setup for gym
-            
-            # 1. get final state
-            self.die_val = np.random.randint(0,6) # [ 0-5 ] die roll for next state
-            observation = np.concatenate((np.array([self.die_val]), self.get_board_state())) # observation for next state
-            
-            # 2. get final reward
-            is_game_end = self.game_finished()
-
-            if(is_game_end): # rewards given at end of game
-                reward += self.game_end_rewards()
-            
-            score_diff = (self.p1.get_score() - self.p2.get_score())/4 # score diff rewards
-            
-            reward += score_diff
-            
-            # return step output            
-            return (observation,reward,is_game_end,{})
+        # action type [VALID | INVALID]
+        action_type = self.player_plays(self.p1, action)
+        self.p1.moves += -1
         
+        # in case the action is invalid
+        if action_type == 'INVALID':                
+            # get reward
+            reward = self.invalid_move_reward
+
+        if self.print_info:
+            print('######P1')
+            print('die: ', self.die_val + 1)
+            print('board state: ', self.get_board_state())
+            print('p1 score: ', self.p1.get_score())
+            print('p1 token positions: ', self.p1.pos_token_array)
+            print('action type: ', action_type)
+            print('\n')
         
+        ######## player 2 plays
+
+        # roll die
+        self.die_val = np.random.randint(0,6) # [ 0-5 ]
+        
+        # action type does not matter for p2
+        action_type = self.player_plays(self.p2, np.random.randint(0,4))
+        self.p2.moves += -1
+        
+        if(self.print_info):
+            print('######P2')
+            print('die: ', self.die_val + 1)
+            print('board state: ', self.get_board_state())
+            print('p2 score: ', self.p2.get_score())
+            print('p2 token positions: ', self.p2.pos_token_array)
+            print('\n')
+        
+        ####### setup for gym
+        
+        # 1. get final state
+        self.die_val = np.random.randint(0,6) # [ 0-5 ] die roll for next state
+        observation = np.concatenate((np.array([self.die_val]), self.get_gym_state())) # observation for next state
+        
+        # 2. get final reward
+        is_game_end = self.game_finished()
+
+        if(is_game_end): # rewards given at end of game
+            reward += self.game_end_rewards()
+        
+        score_diff = (self.p1.get_score() - self.p2.get_score())/4 # score diff rewards
+        
+        reward += score_diff
+        
+        # return step output            
+        return (observation,reward,is_game_end,{})
     
+    def get_gym_state(self):
+        return np.concatenate((self.p1.pos_token_array,self.p2.pos_token_array))
+                
     def is_invalid_move(self, current_position, new_position, active_player:Player):
         
         # check if new position is out of bounds
@@ -157,18 +181,15 @@ class SnlBoard:
         - combination of state and die_val 
         """
         # (die value - 1) + (board state)
-        return np.concatenate((np.array([self.die_val]),self.board.flatten()))
+        return np.concatenate((self.p1.pos_token_array.flatten(),self.p2.pos_token_array.flatten()))
     
-
     def player_plays(self, active_player:Player, action):        
-        
         # player plays turn
         token_to_move = action
         
         # board update state
         return self.board_update_after_turn(active_player, token_to_move)
-        
-      
+          
     def board_update_after_turn(self, active_player : Player, token_to_move):
         """ 
         1. get the new position for the current token
@@ -198,147 +219,54 @@ class SnlBoard:
         # 2. & 3. update position if snakes or ladder
         new_token_position,SnL = self.snake_and_ladder(new_token_position)
         
-        # if SnL == 'snake':
-        #     active_player.snake_cut = True
-        # if SnL == 'ladder':
-        #     active_player.ladder_climb = True
-        
-        
         # 4. check if enemy is present
         enemy_state, enemy_count = self.enemy_check(new_token_position,active_player)
         
+        # update to new position
+        active_player.pos_token_array[token_to_move] = new_token_position
         # enemy present ? | number of enemy
         if enemy_state:
-            if enemy_count > 1:
-                # in case of multiple enemy
-                pos_array = self.board[new_token_position]
-                mod_index = np.min(np.where(pos_array == 0))
-                
-                self.board[new_token_position][mod_index] = active_player.symbol
-            else:
-                opp_token = self.opp[active_player.symbol]
-                
-                pos_array = self.board[new_token_position]
-                mod_index = np.where(pos_array == opp_token)
-                
-                self.board[new_token_position][mod_index] = active_player.symbol
-                
-        # if no enemy is present     
-        else:
-            pos_array = self.board[new_token_position]
-            mod_index = np.min(np.where(pos_array == 0))
-            
-            self.board[new_token_position][mod_index] = active_player.symbol
-            
-        # update score based on new token positions
-        self.update_player_scores()
+            if enemy_count == 1 and new_token_position != 100:
+                if self.opp[active_player.symbol] == 2:
+                    mod_index = np.min(np.where(self.p2.pos_token_array == new_token_position))
+                    self.p2.pos_token_array[mod_index] = 0
+                else:
+                    mod_index = np.min(np.where(self.p1.pos_token_array == new_token_position))
+                    self.p1.pos_token_array[mod_index] = 0
         
-        return True
-       
-    def calculate_reward(self,active_player, original_score):
-        """calcualtes reward base on actions taken
-
-        Args:
-            active_player (Agent): cuurent active player
-        """
-
-        if active_player.symbol == 'P1':
-            opponent = self.p2
-        else: 
-            opponent = self.p1
-
-       
-        # score diff reward
-        score_diff_reward = active_player.score - opponent.score
-        
-        # snake or ladder reward
-        snl_reward = 0
-        if active_player.snake_cut:
-            snl_reward += active_player.score - original_score
-            active_player.snake_cut = False
-        if active_player.ladder_climb:
-            snl_reward += active_player.score - original_score
-            active_player.ladder_climb = False
-        
-        # reward on token cut?
-        token_cut_reward = 0
-        if active_player.has_cut_token:
-            # fixed reward of 200
-            token_cut_reward = 200
-            active_player.has_cut_token = False
-        
-        return (token_cut_reward + score_diff_reward + snl_reward)/100
-
-    def update_player_scores(self):        
-        p1_score = 0
-        p2_score = 0
-        for idx, position in enumerate(self.board):
-            for token in position:
-                
-                if token in self.p1.player_tokens:
-                    p1_score += self.board.index(position) + 1
-                    if idx == 99: # if token has reached the end then extra points
-                        p1_score += 100
-                if token in self.p2.player_tokens:
-                    p2_score += self.board.index(position) + 1
-                    if idx == 99:
-                        p2_score += 100
-        
-        self.p1.score = p1_score
-        self.p2.score = p2_score    
-        
-    def token_on_board(self, token_symbol):
-        for position in self.board:
-            if token_symbol in position:
-                return (True,self.board.index(position),position.index(token_symbol)) # (true,position_index,token_index)
-        return (False,-1,-1)
-
-    def enemy_check(self, position, active_player):
+        return 'VALID'
+         
+    def enemy_check(self, position, active_player:Player):
         """checks if an enemy player is present in the position of the moving token
 
         Args:
             position (_type_): position on board [1-100]
             active_player (Agent): current active player
-        """        
-        enemy_present = False
-        enemy_count = 0
+        """
+        enemies = 0
         
-        for token in self.board[position - 1]:
-            if token != 0 and token != active_player.symbol:
-                enemy_count += 1
-                enemy_present = True
-        return(enemy_present, enemy_count)
+        if (active_player.symbol == 1):
+            # check if p2 present in position
+            for pos in self.p2.pos_token_array:
+                if pos == position:
+                    enemies += 1
+        else:
+            # check if p2 present in position
+            for pos in self.p1.pos_token_array:
+                if pos == position:
+                    enemies += 1
+
+        if enemies > 0:
+            return (True, enemies)
+        
+        return (False,enemies)
     
-    def update_enemy_token(self,position, active_player):
-        """cuts the enemy player and updates scores
-
-        Args:
-            position (_type_): _description_
-            active_player (Agent): _description_
-        """        
-        # update enemy position
-        self.board[position].pop()
-        # update enemy score
-        if active_player.symbol == 'P1':
-            self.p2.score -= position + 1
-        if active_player.symbol == 'P2':
-            self.p1.score -= position + 1
-            
-        # update that active player has cut enemy token
-        active_player.has_cut_token = True
-
     def game_finished(self):
         """check if game finish condition is met
         condtion 1 : if the number moves for each player is exhausted
         condtion 2 : if any of the player reach 100 before moves are exhausted
         """
         if self.p1.moves == 0 and self.p2.moves == 0:
-            if self.p1.score > self.p2.score:
-                self.p1_wins += 1
-            elif self.p1.score < self.p2.score:
-                self.p2_wins += 1
-            else:
-                self.ties += 1
             return True
         return False
     
@@ -370,47 +298,28 @@ class SnlBoard:
             54:93
         }
         return ladders
-    
-    def reset(self):
-        self.p1.reset()
-        self.p2.reset()
-        self.board = [[] for _ in range(self.total_positions)]
-    
-    def get_board():
-        pass
 
-    ####utilities#######################################################
-    
-    def savePolicy(self,active_player):
-        fw = open('./snl_rl/STATE_VALUE IMPLEMENTATION/a_one/policies/policy_' + str(active_player.symbol), 'wb')
-        pickle.dump(active_player.Q_val, fw)
-        fw.close()
 
-    def loadPolicy(self, file, active_player):
-        fr = open(file, 'rb')
-        active_player.Q_val = pickle.load(fr)
-        fr.close()
+# Snl Board tests
+board = SnlBoard()
+initital_state = np.concatenate( ( np.array([np.random.randint(0,6)]),np.zeros((2,4)).flatten() ) )
 
-    def get_stats(self):
-        print('p1 wins : ',self.p1_wins)
-        print('p1 token cuts : ',self.p1.number_of_tokens_cut)
-        print('p2 wins : ',self.p2_wins)
-        print('p1 win/ratio : ',self.p1_wins/self.p2_wins)
-        print('ties : ',self.ties)
+# perform reset
+print('\n','**inital state** :',initital_state,'\n')
+board.reset(initital_state)
 
-    ####strats###########################################################
-    
-    def check_stratergies(self, board, active_player):
-        
-        strat = BoardStrats(board, active_player,self.die_val)
-        ladder_token = strat.best_ladder_token()
-        
-        enemy_cut_token = strat.best_enemy_cut_token()
+# perform step function
+random_action = np.random.randint(0,4)
+print('\nrandom_action : ',random_action)
+game_fin = board.perform_step(random_action)[2]
 
-        if enemy_cut_token:
-            return enemy_cut_token
-        
-        if ladder_token:
-            return ladder_token
-        
-        return None
+
+
+# perform a game loop
+while not game_fin: # game finished state
+    random_action = np.random.randint(0,4)
+    print('\nrandom_action : ',random_action)
+    step_result = board.perform_step(random_action)
+    print(step_result)
+    print('################################################################')
+    game_fin = step_result[2]
