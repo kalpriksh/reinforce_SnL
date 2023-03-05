@@ -5,10 +5,10 @@ import pickle
 
 class Player:
     def __init__(self, symbol):
-        self.moves = 10
+        self.moves = 18
         
         # player token positions [ 1 - 100 ]
-        self.pos_token_array = np.zeros(4,)
+        self.pos_token_array = np.zeros(3,)
         self.symbol = symbol
     
     def get_score(self): 
@@ -22,7 +22,6 @@ class Player:
         return score
 
 #endregion
-
 class SnlBoard:
     
     def __init__(self,printing=False):
@@ -60,14 +59,16 @@ class SnlBoard:
         # get initial die value
         self.die_val = state[0]  # values [0 - 5]
         
-        # get initial state would always be array(2,4) of zeros
-        self.board = state[1:].reshape(2,4)
+        # get initial state would always be array(2,3) of zeros
+        self.board = state[1:].reshape(2,3)
         
         # board info saved
         self.info['starting_state'] = self.board
         
         self.p1 = Player(1)
         self.p2 = Player(2)
+        
+        self.info = dict()
         
         if(self.print_info):
             print('################################')
@@ -105,6 +106,7 @@ class SnlBoard:
 
         if self.print_info:
             print('######P1')
+            print('action :',action)
             print('die: ', self.die_val + 1)
             print('board state: ', self.get_board_state())
             print('p1 score: ', self.p1.get_score())
@@ -118,7 +120,7 @@ class SnlBoard:
         self.die_val = np.random.randint(0,6) # [ 0-5 ]
         
         # action type does not matter for p2
-        action_type = self.player_plays(self.p2, np.random.randint(0,4))
+        action_type = self.player_plays(self.p2, np.random.randint(0,3))
         self.p2.moves += -1
         
         if(self.print_info):
@@ -148,9 +150,14 @@ class SnlBoard:
         # return step output            
         return (observation,reward,is_game_end,{})
     
+    
+    
     def get_gym_state(self):
         return np.concatenate((self.p1.pos_token_array,self.p2.pos_token_array))
-                
+    
+    def game_end_info(self):
+        return self.info
+        
     def is_invalid_move(self, current_position, new_position, active_player:Player):
         
         # check if new position is out of bounds
@@ -169,10 +176,22 @@ class SnlBoard:
             is_tie = True
         
         if p1_won:
+            self.info['p1_won'] = True
+            self.info['p2_won'] = False
+            self.info['tie'] = False
+            
             return self.game_won_reward
         elif is_tie:
+            self.info['p1_won'] = False
+            self.info['p2_won'] = False
+            self.info['tie'] = True
+            
             return self.game_tie_reward
         else:
+            self.info['p1_won'] = False
+            self.info['p2_won'] = True
+            self.info['tie'] = False
+            
             return self.game_lost_reward
               
     def get_board_state(self):
@@ -298,28 +317,3 @@ class SnlBoard:
             54:93
         }
         return ladders
-
-
-# Snl Board tests
-board = SnlBoard()
-initital_state = np.concatenate( ( np.array([np.random.randint(0,6)]),np.zeros((2,4)).flatten() ) )
-
-# perform reset
-print('\n','**inital state** :',initital_state,'\n')
-board.reset(initital_state)
-
-# perform step function
-random_action = np.random.randint(0,4)
-print('\nrandom_action : ',random_action)
-game_fin = board.perform_step(random_action)[2]
-
-
-
-# perform a game loop
-while not game_fin: # game finished state
-    random_action = np.random.randint(0,4)
-    print('\nrandom_action : ',random_action)
-    step_result = board.perform_step(random_action)
-    print(step_result)
-    print('################################################################')
-    game_fin = step_result[2]
